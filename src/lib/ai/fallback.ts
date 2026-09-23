@@ -17,7 +17,7 @@ const questions: Record<Field, string> = {
 };
 export const normalized = (v: string) => v.replace(/\s+/gu, " ").trim().toLowerCase();
 export function extractedCard(input: AiInput): Card {
-  const card = { ...emptyCard(), ...input.card };
+  const card = emptyCard();
   // Явные подписи поддерживают подробное описание без угадывания фактов.
   for (const line of input.description.split("\n")) {
     const colon = line.indexOf(":");
@@ -53,8 +53,12 @@ export function fallbackAnalysis(input: AiInput): Analysis {
   const card = extractedCard(input);
   const known = fieldKeys.filter(k => !!card[k].trim());
   const missing = fieldKeys.filter(k => !card[k].trim());
+  return { card, known, missing, questions: questionsForCard(card, input.description) };
+}
+export function questionsForCard(card: Card, description: string): Analysis["questions"] {
   const priority: Field[] = ["context", "users", "materials", "access", "result", "success", "constraints", "contact", "feedback", "title", "industry", "problem"];
   const needed = priority.filter(k => !meaningful(card[k]));
   const targets = [...needed, ...priority.filter(k => !needed.includes(k))].slice(0, Math.max(3, Math.min(7, needed.length)));
-  return { card, known, missing, questions: targets.map((field, i) => ({ id: `q-${i}-${field}`, field, text: card[field] ? `Уточните или подтвердите поле «${fields[field]}»: ${questions[field]}` : questions[field] })) };
+  const topic = (card.title || description).replace(/\s+/gu, " ").slice(0, 80);
+  return targets.map((field, i) => ({ id: `q-${i}-${field}`, field, text: card[field] ? `Уточните или подтвердите поле «${fields[field]}»: ${questions[field]}` : `Для задачи «${topic}»: ${questions[field]}` }));
 }

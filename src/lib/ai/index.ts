@@ -1,28 +1,34 @@
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { AiInput, Analysis, analysisSchema, AnalysisResult, fieldKeys } from "../domain";
-import { fallbackAnalysis, normalized } from "./fallback";
+import { fallbackAnalysis, questionsForCard } from "./fallback";
+import { groundedValue } from "./grounding";
 import { SYSTEM_PROMPT } from "./prompts";
 
 export function validateOutput(raw: unknown, input: AiInput): Analysis {
   const output = analysisSchema.parse(raw);
-  if (new Set(output.questions.map(q => q.id)).size !== output.questions.length) throw new Error("SCHEMA_INVALID");
-  const sources = [input.description, ...input.answers.map(a => a.value), ...Object.values(input.card ?? {})].map(normalized);
-  for (const value of Object.values(output.card)) if (value.trim() && !sources.some(s => s.includes(normalized(value)))) throw new Error("UNGROUNDED_OUTPUT");
+  for (const field of fieldKeys) output.card[field] = groundedValue(field, output.card[field], input);
   output.known = fieldKeys.filter(k => !!output.card[k].trim());
   output.missing = fieldKeys.filter(k => !output.card[k].trim());
+  const candidates = [...output.questions.filter(q => output.missing.includes(q.field)), ...questionsForCard(output.card, input.description)];
+  const usedFields = new Set<string>(); const usedText = new Set<string>();
+  output.questions = candidates.filter(q => {
+    const text = q.text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+    if (usedFields.has(q.field) || usedText.has(text)) return false;
+    usedFields.add(q.field); usedText.add(text); return true;
+  }).slice(0, 7).map((q, i) => ({ ...q, id: `q-${i}-${q.field}` }));
   return output;
 }
 export async function requestOpenAI(input: AiInput): Promise<Analysis> {
   if (!process.env.OPENAI_API_KEY) throw new Error("MISSING_KEY");
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, baseURL: "https://api.openai.com/v1", timeout: 20000, maxRetries: 0 });
-  const response = await client.responses.parse({ model: process.env.OPENAI_MODEL || "gpt-4.1-mini", store: false, max_output_tokens: 3500, input: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: JSON.stringify(input) }], text: { format: zodTextFormat(analysisSchema, "task_analysis") } });
+  const response = await client.responses.parse({ model: process.env.OPENAI_MODEL || "gpt-4.1-mini", store: false, max_output_tokens: 3500, input: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: JSON.stringify({ description: input.description, answers: input.answers, operation: input.operation }) }], text: { format: zodTextFormat(analysisSchema, "task_analysis") } });
   return validateOutput(response.output_parsed, input);
 }
 export function safeCategory(error: unknown): string {
+  if (error instanceof Error && /timeout/i.test(error.name)) return "TIMEOUT";
   if (error instanceof OpenAI.APIError) return error.status === 401 || error.status === 403 ? "AUTH" : error.status === 429 ? "QUOTA_OR_RATE_LIMIT" : "API_UNAVAILABLE";
   if (error instanceof Error && ["MISSING_KEY", "UNGROUNDED_OUTPUT", "DISABLED"].includes(error.message)) return error.message;
-  if (error instanceof Error && /timeout/i.test(error.name)) return "TIMEOUT";
   return "NETWORK_OR_INVALID_OUTPUT";
 }
 export async function analyze(input: AiInput, provider: (input: AiInput) => Promise<unknown> = requestOpenAI): Promise<AnalysisResult> {

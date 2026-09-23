@@ -1,0 +1,2 @@
+import { defineConfig } from "@playwright/test";
+export default defineConfig({ testDir: "./tests/e2e", fullyParallel: false, workers: 1, timeout: 90000, use: { baseURL: "http://127.0.0.1:3100", headless: true, viewport: { width: 1440, height: 1000 }, screenshot: "only-on-failure" }, webServer: { command: "npm run dev -- --port 3100", url: "http://127.0.0.1:3100", timeout: 120000, reuseExistingServer: false, env: { AI_MODE: "fallback", AI_SANA_DATA_FILE: ".data/e2e.json" } } });

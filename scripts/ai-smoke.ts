@@ -1,6 +1,6 @@
-import { loadEnvConfig } from "@next/env";
+import nextEnv from "@next/env";
 import { requestOpenAI, safeCategory } from "../src/lib/ai";
-loadEnvConfig(process.cwd());
+nextEnv.loadEnvConfig(process.cwd());
 try {
   const result = await requestOpenAI({ description: "Нужна система для учёта заявок клиентов нашей мастерской.", answers: [], operation: "analyze" });
   console.log(`OpenAI: реальный запрос успешен; схема проверена; вопросов: ${result.questions.length}.`);

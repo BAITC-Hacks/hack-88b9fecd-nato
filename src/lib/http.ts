@@ -11,7 +11,13 @@ export function actorFrom(request: NextRequest): Actor {
 }
 export async function readBody(request: NextRequest) {
   const origin = request.headers.get("origin");
-  if (origin && origin !== request.nextUrl.origin) throw new DomainError("Запрос должен быть отправлен из приложения", 403);
+  // Next.js может нормализовать 127.0.0.1 в localhost внутри nextUrl.
+  // Host сохраняет адрес, по которому браузер действительно открыл приложение.
+  if (origin) {
+    let valid = false;
+    try { const url = new URL(origin); valid = url.host === request.headers.get("host") && url.protocol === request.nextUrl.protocol; } catch {}
+    if (!valid) throw new DomainError("Запрос должен быть отправлен из приложения", 403);
+  }
   const reader = request.body?.getReader();
   if (!reader) throw new DomainError("Пустой запрос");
   const chunks: Uint8Array[] = []; let size = 0;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+z.config(z.locales.ru());
 
 export const fields = {
   title: "Название", industry: "Отрасль / тема", context: "Контекст",

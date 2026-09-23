@@ -25,6 +25,26 @@ export function extractedCard(input: AiInput): Card {
     const key = fieldKeys.find(k => normalized(line.slice(0, colon)) === normalized(fields[k]) || k === line.slice(0, colon).trim());
     if (key) card[key] = line.slice(colon + 1).trim().slice(0, key === "title" ? 200 : key === "industry" ? 120 : key === "contact" ? 500 : 1500);
   }
+  // Консервативно переносим целые предложения с явными признаками поля.
+  // Никаких добавленных слов: даже при неоднозначности исходная цитата сохранена.
+  const hints: Partial<Record<Field, RegExp>> = {
+    context: /сейчас|в настоящее время|вручную|текущий процесс/iu,
+    problem: /проблем|теря[ею]|нужна|нужен|хотим|сложно/iu,
+    users: /пользовател|пользоваться будут|решение для|для администратор|для сотрудник|для студент/iu,
+    materials: /есть .*(?:данн|таблиц|csv|пример)|имеется|выгрузк|набор данных|нет данных|материалы/iu,
+    access: /предостав|переда[дст]|получить доступ|доступ выда|выдаст/iu,
+    constraints: /срок|бюджет|не более|не позднее|за \d+ недел|огранич|без персональ/iu,
+    result: /ожидаем|в результате|на выходе|нужен прототип|результат[ —:-]|команда .*(?:переда|созда)/iu,
+    success: /критери|примем|проверим|проверка|тест .*(?:пройд|проход)/iu,
+    contact: /[^\s@]+@[^\s@]+\.[^\s@]+/u,
+    feedback: /созвон|консультац|отвечаем|обратн.*связ/iu,
+  };
+  const sentences = input.description.split(/(?<=[.!?])\s+|\n/u).map(s => s.trim()).filter(Boolean);
+  for (const key of fieldKeys) {
+    if (card[key] || !hints[key]) continue;
+    const sentence = sentences.find(s => hints[key]!.test(s));
+    if (sentence) card[key] = sentence.slice(0, key === "contact" ? 500 : 1500);
+  }
   if (!card.problem) card.problem = input.description.slice(0, 3000);
   for (const answer of input.answers) if (answer.value.trim()) card[answer.field] = answer.value.trim().slice(0, answer.field === "title" ? 200 : answer.field === "industry" ? 120 : answer.field === "contact" ? 500 : 1500);
   return card;
